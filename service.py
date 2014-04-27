@@ -1,8 +1,10 @@
 import os
 from flask import Flask, request, redirect, url_for, make_response, jsonify
 from werkzeug.utils import secure_filename
-
+import logging
 import subprocess
+import time
+import tempfile
 
 UPLOAD_FOLDER = os.path.join(os.environ['HOME'],'flask_uploads')
 ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'ppt', 'xls', 'doc'])
@@ -26,21 +28,10 @@ from thumbnailer import library as thumb
 os.environ['UNO_CONNECTION'] = "uno:socket,host=localhost,port=2002;urp;StarOffice.ComponentContext"
 '''
 Remember to run the following:
-  soffice --accept="socket,host=localhost,port=2002;urp; --headless --invisible --nocrashreport --nodefault --nofirststartwizard --nologo --norestore
+  soffice --accept="socket,host=localhost,port=2002;urp;" --headless --invisible --nocrashreport --nodefault --nofirststartwizard --nologo --norestore
 '''
 def get_thumbnail(src_path, size):
-    t = thumb.get(file(src_path), width=size[0], height=size[1])
-    i = Image.open(t)
-    w, h = i.size
-    w,h = size
-
-    t.seek(0)
-    tdata = {
-        "data": base64.b64encode(t.read()),
-        "width": w,
-        "height": h,
-    }
-    return tdata
+    return thumb.get(file(src_path), width=size[0], height=size[1])    
 
 #######################################
 
@@ -49,7 +40,17 @@ def upload_file():
 
     # POST request
     if request.method == 'POST':
-        ufile = request.files['file']
+
+        logging.warn(request.headers)
+        logging.warn(request.files)
+        
+        if request.files.get('file', None) is None:
+            msg = "Bad request: 'files' was found in request"            
+            resp = make_response(msg, 400)
+            return resp
+
+        ufile = request.files.get('file', None)
+        
         if ufile and allowed_file(ufile.filename):
             filename = secure_filename(ufile.filename)
             dest_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -58,30 +59,29 @@ def upload_file():
             ### Generate Thumbnail ###
             errors = {}
 
-            if request.form['thumbnail'].lower() == "yes":
+            if request.form.get('thumbnail',"no").lower() == "yes":
                 size_str = request.form.get('thumbnail_size',"300x300")
                 size = map(int, size_str.split("x"))
                 try:
-                    tdata = get_thumbnail(dest_path, size)
+                    thumb_file = get_thumbnail(dest_path, size)
                 except Exception as e:
                     errors['thumbnail'] = str(e)
-                    tdata = None
-            else:
-                tdata = None
 
-            msg = {
-                "filename": filename,
-                "thumbnail": tdata
-            }
+            if request.form.get('save_orig',"no") == "no":
+                os.unlink(dest_path)
+
+            msg = {}
             if len(errors):
                 code = 501
                 msg['errors'] = errors
+                resp = make_response(jsonify(msg), code)
+                resp.headers['Content-type'] = "application/json"
+                return resp
             else:
-                code = 200
-
-            resp = make_response(jsonify(msg), code)
-            resp.headers['Content-type'] = "application/json"
-            return resp
+                response = make_response(thumb_file.read())
+                response.headers['Content-Type'] = 'image/png'
+                response.headers['Content-Disposition'] = "attachment; filename=thumbnail.png"
+                return response
 
         else:
             msg = "Invalid file, supported types: %s" % ','.join(list(ALLOWED_EXTENSIONS))
@@ -96,6 +96,8 @@ def upload_file():
     <form action="" method=post enctype=multipart/form-data>
       <p><input type=file name=file>
          <input type=submit value=Upload>
+         <input type=hidden name="thumbnail" value="yes">
+         <input type=hidden name="thumbnail_size" value="500x500"
     </form>
     '''
 
