@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, redirect, url_for, make_response, jsonify
+from flask import Flask, request, redirect, url_for, make_response, jsonify, send_file
 from werkzeug.utils import secure_filename
 import logging
 import subprocess
@@ -7,16 +7,15 @@ import time
 import tempfile
 
 UPLOAD_FOLDER = os.path.join(os.environ['HOME'],'flask_uploads')
-ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'ppt', 'xls', 'doc'])
+ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'ppt', 'pptx' ,'xls', 'xlsx', 'doc', 'docx'])
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.debug = True
 
 def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
-
+    return os.path.splitext(filename)[-1].replace('.','') in ALLOWED_EXTENSIONS
+    
 #######################################
 
 import base64
@@ -40,9 +39,6 @@ def upload_file():
 
     # POST request
     if request.method == 'POST':
-
-        logging.warn(request.headers)
-        logging.warn(request.files)
         
         if request.files.get('file', None) is None:
             msg = "Bad request: 'files' was found in request"            
@@ -78,13 +74,14 @@ def upload_file():
                 resp.headers['Content-type'] = "application/json"
                 return resp
             else:
-                response = make_response(thumb_file.read())
-                response.headers['Content-Type'] = 'image/png'
-                response.headers['Content-Disposition'] = "attachment; filename=thumbnail.png"
-                return response
+                return send_file(thumb_file, attachment_filename="thumbnail.png", as_attachment=True)
+                #response = make_response(thumb_file)
+                #response.headers['Content-Type'] = 'image/png'
+                #response.headers['Content-Disposition'] = "attachment; filename=thumbnail.png"
+                #return response
 
         else:
-            msg = "Invalid file, supported types: %s" % ','.join(list(ALLOWED_EXTENSIONS))
+            msg = "Invalid file: '%s', supported types: %s" % (ufile.filename, ','.join(list(ALLOWED_EXTENSIONS)))
             resp = make_response(msg, 400)
             return resp
 
