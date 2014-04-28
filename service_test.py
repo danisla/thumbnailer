@@ -10,10 +10,8 @@ Usage:
 '''
 
 import requests
-import base64
 import sys
 import os
-import json
 
 if len(sys.argv) != 3:
 	print "USAGE: %s <input file> <output thumbnail>" % __file__
